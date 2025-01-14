@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bingo Generator</title>
+    <style>
+        /* Add basic styling here */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f9;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(5, 100px);
+            grid-template-rows: repeat(5, 100px);
+            gap: 10px;
+        }
+        .grid-item {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            font-size: 1em;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .grid-item:active {
+            background-color: #d1e7dd;
+            transform: scale(0.95);
+        }
+        .grid-item.pressed {
+            background-color: #d1e7dd;
+            color: #fff;
+            pointer-events: none;
+        }
+        #message {
+            position: absolute;
+            top: 10%;
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        #reset-button, #share-button, #load-button, #add-button {
+            padding: 10px 20px;
+            font-size: 1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #reset-button:hover, #share-button:hover, #load-button:hover, #add-button:hover {
+            background-color: #0056b3;
+        }
+        .load-container, .input-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 1em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 300px;
+        }
+    </style>
+    <script>
+        // Generate a shuffled list of numbers from 1 to 25
+        function generateBingoNumbers() {
+            const numbers = Array.from({ length: 25 }, (_, i) => i + 1);
+            for (let i = numbers.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+            }
+            return numbers;
+        }
+
+        async function fetchWords() {
+            const response = await fetch('http://localhost:5000/words');
+            const words = await response.json();
+            return words;
+        }
+
+        // Encode the current grid into Base64 for sharing
+        function encodeGrid(grid) {
+            const json = JSON.stringify(grid); // Convert grid to JSON string
+            const base64 = btoa(json); // Encode JSON string to Base64
+            return base64;
+        }
+
+        // Decode a Base64 string back into a grid
+        function decodeGrid(encodedString) {
+            const json = atob(encodedString); // Decode Base64 to JSON string
+            const grid = JSON.parse(json); // Parse JSON string back into array
+            return grid;
+        }
+        
+        // Check if any row has all buttons pressed
+        function checkForRow() {
+            const gridContainer = document.querySelector('.grid-container');
+            const buttons = Array.from(gridContainer.children);
+
+            for (let i = 0; i < 5; i++) {
+                const row = buttons.slice(i * 5, i * 5 + 5); // Get each row
+                if (row.every(button => button.classList.contains('pressed'))) {
+                    document.getElementById('message').textContent = 'Bingo! You made a row!';
+                    return true; // A row is complete
+                }
+            }
+            return false; // No row is complete yet
+        }
+
+        // Check if any column has all buttons pressed
+        function checkForColumn() {
+            const gridContainer = document.querySelector('.grid-container');
+            const buttons = Array.from(gridContainer.children);
+
+            for (let col = 0; col < 5; col++) {
+                const column = [];
+                for (let row = 0; row < 5; row++) {
+                    column.push(buttons[row * 5 + col]); // Collect items in the same column
+                }
+
+                if (column.every(button => button.classList.contains('pressed'))) {
+                    document.getElementById('message').textContent = 'Bingo! You made a column!';
+                    return true; // A column is complete
+                }
+            }
+            return false; // No column is complete yet
+        }
+
+        function checkForDiagonal() {
+            const gridContainer = document.querySelector('.grid-container');
+            const buttons = Array.from(gridContainer.children);
+
+            const diagonalA = [];
+            const diagonalB = [];
+            for (let i = 0; i < 5; i++){
+                diagonalA.push(buttons[0 + i * 6]); // Collect items on the diagonal
+                diagonalB.push(buttons[4 + 4 * i]);
+            }
+            if (diagonalA.every(button => button.classList.contains('pressed'))) {
+                document.getElementById('message').textContent = 'Bingo! You made a diagonal';
+                return true;
+            }
+            if (diagonalB.every(button => button.classList.contains('pressed'))) {
+                document.getElementById('message').textContent = 'Bingo! You made a diagonal';
+                return true;
+            }
+            return false;
+        }
+
+        // Check for both row and column completion
+        function checkForBingo() {
+            const rowBingo = checkForRow();
+            const columnBingo = checkForColumn();
+            const diagonalBingo = checkForDiagonal();
+
+            if (!rowBingo && !columnBingo && !diagonalBingo) {
+                document.getElementById('message').textContent = ''; // Clear message if no bingo
+            }
+        }
+
+        // Populate the grid with random numbers
+        async function populateGrid(encodedState = null) {
+            const gridContainer = document.querySelector('.grid-container');
+
+            let selectedWords;
+            if (encodedState) {
+                // Decode the shared grid state
+                const words = decodeGrid(encodedState);
+                selectedWords = [];
+                words.forEach(row => {
+                    row.forEach(word => {
+                        selectedWords.push(word);
+                    });
+                });
+
+            } else {
+                // Fetch a random grid from the backend
+                const words = await fetchWords();
+                if (words.length === 0) {
+                    gridContainer.innerHTML = '<p>Error loading words. Please try again.</p>';
+                    return;
+                }
+                // Shuffle the words and take the first 25
+                for (let i = words.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [words[i], words[j]] = [words[j], words[i]];
+                }
+                selectedWords = words.slice(0, 25);
+            }
+
+            
+
+            gridContainer.innerHTML = '';
+            var i = 0;
+            selectedWords.forEach(word => {
+                i++;
+                if (i == 13) {
+                    const button = document.createElement('button');
+                    button.className = 'grid-item';
+                    button.textContent = "FREE";
+                    button.classList.add('pressed');
+                    gridContainer.appendChild(button);
+
+                } else {
+                    const button = document.createElement('button');
+                    button.className = 'grid-item';
+                    button.textContent = word;
+
+                    // Add click event to the button
+                    button.addEventListener('click', () => {
+                        button.classList.add('pressed');
+                        checkForBingo();
+                    });
+
+                    gridContainer.appendChild(button);
+                }
+            });
+
+            // Clear any previous messages
+            document.getElementById('message').textContent = '';
+        }
+
+        // Generate a shareable link with the encoded Bingo state
+        async function shareBingo() {
+            const gridContainer = document.querySelector('.grid-container');
+            const grid = [];
+            const buttons = Array.from(gridContainer.children);
+
+            // Convert the grid into a 2D array
+            for (let i = 0; i < 5; i++) {
+                grid.push(buttons.slice(i * 5, i * 5 + 5).map(button => button.textContent));
+            }
+
+            const encodedState = encodeGrid(grid);
+            const shareLink = encodedState;
+            // Remove for creating a shareable link
+            //const shareLink = `${window.location.origin}?state=${encodedState}`;
+            //alert(`Share this link: ${shareLink}`);
+            navigator.clipboard.writeText(shareLink);
+        }
+
+        // Load Bingo from encoded link
+        function loadBingo() {
+            const textField = document.getElementById('loadText');
+            const value = textField.value.trim();
+
+            if (value) {
+                populateGrid(value);
+            } else {
+                alert('Text field is empty. Please enter a code.');
+            }
+        }
+
+        // Adds word to the SQL database
+        function addToDatabase() {
+            const textField = document.getElementById('inputText');
+            const value = textField.value.trim();
+            if (!value) {
+                alert("Please enter a word before adding.");
+                return;
+            }
+
+            // Send the word to the backend
+            fetch('/add-word', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ value }),
+            })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Word added successfully!');
+                        textField.value = ''; // Clear the input field
+                    } else {
+                        alert('Failed to add word. Try again.');
+                    }
+                })
+                .catch(error => {
+                    alert(error);
+                    console.error('Error:', error);
+                    alert('An error occurred while adding the word. ', error);
+                });
+        }
+
+        // Reset the grid (repopulate with new random words)
+        function resetGrid() {
+            populateGrid();
+        }
+
+        // Wait for the DOM to load
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const encodedState = urlParams.get('state');
+            populateGrid(encodedState);
+        });
+    </script>
+</head>
+<body>
+    <div id="message"></div>
+    <div class="grid-container">
+        <!-- Bingo numbers will be inserted here dynamically -->
+    </div>
+    <div class="button-container">
+        <button id="reset-button" onclick="resetGrid()">Reset Bingo</button>
+        <button id="share-button" onclick="shareBingo()">Share Bingo</button>
+
+        <div class="load-container">
+            <input type="text" id="loadText" placeholder="Enter code here..." />
+            <button id="load-button" onclick="loadBingo()">Load Bingo</button>
+        </div>
+
+        <div class="input-container">
+            <input type="text" id="inputText" placeholder="Enter new word here..." />
+            <button id="add-button" onclick="addToDatabase()">Add Word to Database</button>
+        </div>
+    </div>
+    
+</body>
+</html>
